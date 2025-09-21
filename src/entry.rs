@@ -19,6 +19,7 @@ pub struct Entry<'a, T: Default> {
 }
 
 impl<'a, T: Default> Clone for Entry<'a, T> {
+    /// Makes a clone of the `Entry` that points to the same allocation.
     fn clone(&self) -> Self {
         Self {
             item: self.item.clone(),
@@ -77,6 +78,7 @@ pub struct OwnedEntry<T: Default> {
 }
 
 impl<T: Default> Clone for OwnedEntry<T> {
+    /// Makes a clone of the `OwnedEntry` that points to the same allocation.
     fn clone(&self) -> Self {
         Self {
             item: self.item.clone(),
@@ -161,12 +163,24 @@ impl<T: ?Sized> Clone for Prc<T> {
 }
 
 impl<T> Prc<T> {
+    /// Starting the pointer count as 0 which means it is in the pool without
+    /// any clone instance.
     #[inline]
-    pub(crate) fn new(data: T) -> Self {
-        // Starting the pointer count as 0 which means it is in the pool without
-        // any other references.
+    pub(crate) fn new_zero(data: T) -> Self {
         let x: Box<_> = Box::new(PrcInner {
             count: AtomicUsize::new(0),
+            data,
+        });
+        Self {
+            ptr: Box::leak(x).into(),
+        }
+    }
+
+    /// Create a new `Prc<T>` with the reference count starting at 1.
+    #[inline]
+    pub(crate) fn new(data: T) -> Self {
+        let x: Box<_> = Box::new(PrcInner {
+            count: AtomicUsize::new(1),
             data,
         });
         Self {

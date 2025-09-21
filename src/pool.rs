@@ -10,6 +10,43 @@ use crate::{Entry, OwnedEntry};
 
 /// A concurrent object pool.
 ///
+/// # Examples
+///
+/// ```rust
+/// use concurrent_pool::Pool;
+/// use std::sync::{Arc, mpsc};
+///
+/// let pool: Arc<Pool<u32>> = Arc::new(Pool::with_capacity(10));
+///
+/// let (tx, rx) = mpsc::channel();
+/// let clone_pool = pool.clone();
+/// let tx1 = tx.clone();
+/// let sender1 = std::thread::spawn(move || {
+///     let item = clone_pool.pull_owned_with(|x| *x = 1).unwrap();
+///     tx1.send((1, item)).unwrap();
+/// });
+///
+/// let clone_pool = pool.clone();
+/// let sender2 = std::thread::spawn(move || {
+///     let item = clone_pool.pull_owned_with(|x| *x = 2).unwrap();
+///     tx.send((2, item)).unwrap();
+/// });
+///
+/// let receiver = std::thread::spawn(move || {
+///     for _ in 0..2 {
+///         let (id, item) = rx.recv().unwrap();
+///         if id == 1 {
+///             assert_eq!(*item, 1);
+///         } else {
+///             assert_eq!(*item, 2);
+///         }
+///     }
+/// });
+///
+/// sender1.join().unwrap();
+/// sender2.join().unwrap();
+/// receiver.join().unwrap();
+/// ```
 pub struct Pool<T: Default> {
     /// Configuration of the pool.
     config: Config<T>,
@@ -33,6 +70,18 @@ impl<T: Default> Drop for Pool<T> {
 
 impl<T: Default> Pool<T> {
     /// Create a new pool with the given preallocation and capacity.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::new(2, 5);
+    /// assert_eq!(pool.available(), 5);
+    /// assert_eq!(pool.available_noalloc(), 2);
+    /// let item = pool.pull().unwrap();
+    /// assert_eq!(pool.available_noalloc(), 1);
+    /// ```
     pub fn new(prealloc: usize, capacity: usize) -> Self {
         Self::with_config(Config {
             capacity,
@@ -42,16 +91,61 @@ impl<T: Default> Pool<T> {
     }
 
     /// Create a new pool with the given capacity.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::with_capacity(10);
+    /// assert_eq!(pool.available(), 10);
+    /// assert_eq!(pool.available_noalloc(), 10);
+    /// let item = pool.pull().unwrap();
+    /// assert_eq!(pool.available(), 9);
+    /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         Self::new(capacity, capacity)
     }
 
     /// Create a new pool with half of the capacity preallocated.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::with_capacity_half_prealloc(10);
+    /// assert_eq!(pool.available(), 10);
+    /// assert_eq!(pool.available_noalloc(), 5);
+    /// let item = pool.pull().unwrap();
+    /// assert_eq!(pool.available_noalloc(), 4);
+    /// assert_eq!(pool.in_use(), 1);
+    /// ```
     pub fn with_capacity_half_prealloc(capacity: usize) -> Self {
         Self::new(capacity / 2, capacity)
     }
 
     /// Create a new pool with the given configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::{Pool, Config};
+    ///
+    /// fn clear_func(x: &mut String) {
+    ///     x.clear();
+    /// }
+    ///
+    /// let mut config = Config::default();
+    /// config.capacity = 1;
+    /// config.clear_func = Some(clear_func);
+    /// let pool: Pool<String> = Pool::with_config(config);
+    /// let item = pool.pull_with(|s| s.push_str("Hello, World!")).unwrap();
+    /// assert_eq!(&*item, "Hello, World!");
+    /// drop(item);
+    /// let item2 = pool.pull().unwrap();
+    /// assert_eq!(&*item2, "");
+    /// ```
     pub fn with_config(mut config: Config<T>) -> Self {
         config.post_process();
         let prealloc = config.prealloc;
@@ -72,31 +166,126 @@ impl<T: Default> Pool<T> {
             items.push(T::default());
         }
         while let Some(item) = items.pop() {
-            let _ = pool.queue.push(Prc::new(item));
+            let _ = pool.queue.push(Prc::new_zero(item));
         }
         pool
     }
 
     /// Get in used items count.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::with_capacity(10);
+    /// assert_eq!(pool.in_use(), 0);
+    /// let item = pool.pull().unwrap();
+    /// assert_eq!(pool.in_use(), 1);
+    /// let item2 = pool.pull().unwrap();
+    /// assert_eq!(pool.in_use(), 2);
+    /// ```
     pub fn in_use(&self) -> usize {
         self.allocated.load(Relaxed) - self.queue.len()
     }
 
+    /// Get allocated items count.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool = Pool::<usize>::new(2, 5);
+    /// assert_eq!(pool.allocated(), 2);
+    /// ```
+    pub fn allocated(&self) -> usize {
+        self.allocated.load(Acquire)
+    }
+
     /// Get available items count.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::with_capacity(10);
+    /// assert_eq!(pool.available(), 10);
+    /// let item = pool.pull().unwrap();
+    /// assert_eq!(pool.available(), 9);
+    /// ```
     pub fn available(&self) -> usize {
         self.config.capacity - self.in_use()
     }
 
     /// Get available items count without allocation.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::new(2, 5);
+    /// assert_eq!(pool.available_noalloc(), 2);
+    /// let item = pool.pull().unwrap();
+    /// assert_eq!(pool.available_noalloc(), 1);
+    /// let item2 = pool.pull().unwrap();
+    /// assert_eq!(pool.available_noalloc(), 0);
+    /// let item3 = pool.pull().unwrap();
+    /// assert_eq!(pool.available_noalloc(), 0);
+    /// drop(item);
+    /// assert_eq!(pool.available_noalloc(), 1);
+    /// ```
     pub fn available_noalloc(&self) -> usize {
         self.queue.len()
     }
 
     /// Check if the pool is empty.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::with_capacity(2);
+    /// assert!(!pool.is_empty());
+    /// let item1 = pool.pull().unwrap();
+    /// assert!(!pool.is_empty());
+    /// let item2 = pool.pull().unwrap();
+    /// assert!(pool.is_empty());
+    /// drop(item1);
+    /// assert!(!pool.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.available() == 0
     }
 
+    /// Get the capacity of the pool.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::with_capacity(10);
+    /// assert_eq!(pool.capacity(), 10);
+    /// ```
+    pub fn capacity(&self) -> usize {
+        self.config.capacity
+    }
+
+    /// Pull an item from the pool. Return `None` if the pool is empty.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::with_capacity(2);
+    /// let item1 = pool.pull().unwrap();
+    /// assert_eq!(*item1, 0);
+    /// ```
     pub fn pull(&self) -> Option<Entry<'_, T>> {
         self.pull_inner().map(|item| Entry {
             item: Some(item),
@@ -104,6 +293,17 @@ impl<T: Default> Pool<T> {
         })
     }
 
+    /// Pull an item from the pool and apply a function to it. Return `None` if the pool is empty.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    ///
+    /// let pool: Pool<u32> = Pool::with_capacity(2);
+    /// let item1 = pool.pull_with(|x| *x = 42).unwrap();
+    /// assert_eq!(*item1, 42);
+    /// ```
     pub fn pull_with<F>(&self, func: F) -> Option<Entry<'_, T>>
     where
         F: FnOnce(&mut T),
@@ -114,6 +314,18 @@ impl<T: Default> Pool<T> {
         })
     }
 
+    /// Pull an owned item from the pool. Return `None` if the pool is empty.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    /// use std::sync::Arc;
+    ///
+    /// let pool: Arc<Pool<u32>> = Arc::new(Pool::with_capacity(2));
+    /// let item1 = pool.pull_owned().unwrap();
+    /// assert_eq!(*item1, 0);
+    /// ```
     pub fn pull_owned(self: &Arc<Self>) -> Option<OwnedEntry<T>> {
         self.pull_inner().map(|item| crate::OwnedEntry {
             item: Some(item),
@@ -121,6 +333,18 @@ impl<T: Default> Pool<T> {
         })
     }
 
+    /// Pull an owned item from the pool and apply a function to it. Return `None` if the pool is empty.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    /// use std::sync::Arc;
+    ///
+    /// let pool: Arc<Pool<u32>> = Arc::new(Pool::with_capacity(2));
+    /// let item1 = pool.pull_owned_with(|x| *x = 42).unwrap();
+    /// assert_eq!(*item1, 42);
+    /// ```
     pub fn pull_owned_with<F>(self: &Arc<Self>, func: F) -> Option<OwnedEntry<T>>
     where
         F: FnOnce(&mut T),
@@ -131,6 +355,7 @@ impl<T: Default> Pool<T> {
         })
     }
 
+    /// Internal method to pull an item from the pool.
     fn pull_inner(&self) -> Option<Prc<T>> {
         match self.queue.pop() {
             None => {
@@ -141,9 +366,7 @@ impl<T: Default> Pool<T> {
                     self.fastpulls.store(0, SeqCst);
                 }
                 if self.allocated.fetch_add(1, Relaxed) + 1 <= self.config.capacity {
-                    let item = Prc::new(T::default());
-                    item.inc_ref();
-                    Some(item)
+                    Some(Prc::new(T::default()))
                 } else {
                     None
                 }
@@ -151,15 +374,15 @@ impl<T: Default> Pool<T> {
             Some(item) => {
                 if self.config.need_process_reclamation {
                     let left = self.queue.len();
-                    if left >= self.config.idle_fastpull_threshold {
+                    if left >= self.config.idle_threshold_for_fastpull {
                         let fastpulls = self.fastpulls.fetch_add(1, Relaxed) + 1;
-                        if fastpulls >= self.config.fastpull_reclaim_threshold
+                        if fastpulls >= self.config.fastpull_threshold_for_reclaim
                             && self.additional_allocated.load(Relaxed)
                         {
                             self.reclaim();
                         }
                     } else {
-                        self.fastpulls.store(0, SeqCst);
+                        self.fastpulls.store(0, Relaxed);
                     }
                 }
                 item.inc_ref();
@@ -168,6 +391,7 @@ impl<T: Default> Pool<T> {
         }
     }
 
+    /// Reclaim an item from the pool to reduce memory usage.
     fn reclaim(&self) {
         if let Some(item) = self.queue.pop() {
             unsafe { item.drop_slow() };
@@ -185,7 +409,9 @@ impl<T: Default> Pool<T> {
         if let Some(func) = &self.config.clear_func {
             func(unsafe { Prc::get_mut_unchecked(&mut item) })
         }
-        let _ = self.queue.push(item);
+        if self.queue.push(item).is_err() {
+            panic!("It is imposible that the pool is full when recycling an item");
+        }
     }
 }
 
@@ -197,10 +423,11 @@ pub struct Config<T: Default> {
     pub prealloc: usize,
     /// Whether to automatically reclaim allocated items and free them to reduce memory usage.
     pub auto_reclaim: bool,
-    /// Threshold for fast-pull items to trigger reclamation when `auto_reclaim` is enabled.
-    pub fastpull_reclaim_threshold: usize,
-    /// Threshold for idle items to judge as a fastpull when `auto_reclaim` is enabled.
-    pub idle_fastpull_threshold: usize,
+    /// Threshold of `fast-pull` continuous occurrence to trigger reclamation
+    /// when `auto_reclaim` is enabled.
+    pub fastpull_threshold_for_reclaim: usize,
+    /// Threshold for idle items to judge as a fast-pull when `auto_reclaim` is enabled.
+    pub idle_threshold_for_fastpull: usize,
     /// Optional function to clear or reset an item before it is reused.
     pub clear_func: Option<fn(&mut T)>,
     /// Internal flag to indicate if the pool needs to process reclamation.
@@ -214,8 +441,8 @@ impl<T: Default> Default for Config<T> {
             prealloc: 0,
             auto_reclaim: false,
             clear_func: None,
-            fastpull_reclaim_threshold: 0,
-            idle_fastpull_threshold: 0,
+            fastpull_threshold_for_reclaim: 0,
+            idle_threshold_for_fastpull: 0,
             need_process_reclamation: false,
         }
     }
@@ -223,8 +450,8 @@ impl<T: Default> Default for Config<T> {
 
 impl<T: Default> Config<T> {
     pub(crate) fn post_process(&mut self) {
-        if self.idle_fastpull_threshold == 0 {
-            self.idle_fastpull_threshold = max(1, self.capacity / 20);
+        if self.idle_threshold_for_fastpull == 0 {
+            self.idle_threshold_for_fastpull = max(1, self.capacity / 20);
         }
 
         if self.auto_reclaim && self.prealloc != self.capacity {
