@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/concurrent-pool.svg)](https://crates.io/crates/concurrent-pool)
 [![rustdoc](https://img.shields.io/badge/Doc-concurrent_pool-green.svg)](https://docs.rs/concurrent-pool/)
 
-A concurrent object pool.
+A concurrent object pool based on [Crossbeam Queue](https://crates.io/crates/crossbeam-queue)
 
 ## Features
 
