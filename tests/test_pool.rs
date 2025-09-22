@@ -31,7 +31,6 @@ fn pool_with_many_big_struct() {
 }
 
 #[test]
-#[should_panic]
 fn pool_with_zero_capacity() {
     let _pool = Pool::<BigStruct>::with_capacity(0);
 }

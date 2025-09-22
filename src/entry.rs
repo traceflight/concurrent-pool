@@ -45,6 +45,16 @@ impl<'a, T: Default> Deref for Entry<'a, T> {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<'a, T: Default + serde::Serialize> serde::Serialize for Entry<'a, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.get().serialize(serializer)
+    }
+}
+
 impl<'a, T: Default> Entry<'a, T> {
     /// Get reference to the inner item.
     pub fn get(&self) -> &T {
@@ -101,6 +111,16 @@ impl<T: Default> Deref for OwnedEntry<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         self.item.as_ref().unwrap()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T: Default + serde::Serialize> serde::Serialize for OwnedEntry<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.get().serialize(serializer)
     }
 }
 

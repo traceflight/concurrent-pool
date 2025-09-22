@@ -53,16 +53,16 @@ impl<T: Default> Builder<T> {
         self.auto_reclaim(true)
     }
 
-    /// Set the threshold of `fast-pull` continuous occurrence to trigger reclamation
+    /// Set the threshold of `surplus-pull` continuous occurrence to trigger reclamation
     /// when `auto_reclaim` is enabled.
-    pub fn fastpull_threshold_for_reclaim(&mut self, threshold: usize) -> &mut Self {
-        self.config.fastpull_threshold_for_reclaim = threshold;
+    pub fn surpluspull_threshold_for_reclaim(&mut self, threshold: usize) -> &mut Self {
+        self.config.surpluspull_threshold_for_reclaim = threshold;
         self
     }
 
-    /// Set the threshold for idle items to judge as a `fast-pull` when `auto_reclaim` is enabled.
-    pub fn idle_threshold_for_fastpull(&mut self, threshold: usize) -> &mut Self {
-        self.config.idle_threshold_for_fastpull = threshold;
+    /// Set the threshold for idle items to judge as a `surplus-pull` when `auto_reclaim` is enabled.
+    pub fn idle_threshold_for_surpluspull(&mut self, threshold: usize) -> &mut Self {
+        self.config.idle_threshold_for_surpluspull = threshold;
         self
     }
 

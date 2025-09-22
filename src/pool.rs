@@ -13,22 +13,25 @@ use crate::{Entry, OwnedEntry};
 /// # Examples
 ///
 /// ```rust
-/// use concurrent_pool::Pool;
+/// use concurrent_pool::{Pool, Builder};
 /// use std::sync::{Arc, mpsc};
 ///
-/// let pool: Arc<Pool<u32>> = Arc::new(Pool::with_capacity(10));
+/// let mut builder = Builder::new();
+///
+/// let pool: Arc<Pool<String>> = Arc::new(builder.capacity(10).clear_func(String::clear).build());
+///
 ///
 /// let (tx, rx) = mpsc::channel();
 /// let clone_pool = pool.clone();
 /// let tx1 = tx.clone();
 /// let sender1 = std::thread::spawn(move || {
-///     let item = clone_pool.pull_owned_with(|x| *x = 1).unwrap();
+///     let item = clone_pool.pull_owned_with(|x| x.push_str("1")).unwrap();
 ///     tx1.send((1, item)).unwrap();
 /// });
 ///
 /// let clone_pool = pool.clone();
 /// let sender2 = std::thread::spawn(move || {
-///     let item = clone_pool.pull_owned_with(|x| *x = 2).unwrap();
+///     let item = clone_pool.pull_owned_with(|x| x.push_str("2")).unwrap();
 ///     tx.send((2, item)).unwrap();
 /// });
 ///
@@ -36,9 +39,9 @@ use crate::{Entry, OwnedEntry};
 ///     for _ in 0..2 {
 ///         let (id, item) = rx.recv().unwrap();
 ///         if id == 1 {
-///             assert_eq!(*item, 1);
+///             assert_eq!(*item, "1");
 ///         } else {
-///             assert_eq!(*item, 2);
+///             assert_eq!(*item, "2");
 ///         }
 ///     }
 /// });
@@ -54,8 +57,8 @@ pub struct Pool<T: Default> {
     queue: ArrayQueue<Prc<T>>,
     /// Number of items currently allocated.
     allocated: AtomicUsize,
-    /// Number of currently continues `fast-pull` times
-    fastpulls: AtomicUsize,
+    /// Number of currently continues `surplus-pull` times
+    surpluspulls: AtomicUsize,
     /// Whether an additional item has been allocated beyond the preallocated items.
     additional_allocated: AtomicBool,
 }
@@ -154,10 +157,11 @@ impl<T: Default> Pool<T> {
             "prealloc must be less than or equal to capacity"
         );
 
+        let queue_len = max(1, config.capacity);
         let pool = Self {
-            queue: ArrayQueue::new(config.capacity),
+            queue: ArrayQueue::new(queue_len),
             allocated: AtomicUsize::new(prealloc),
-            fastpulls: AtomicUsize::new(0),
+            surpluspulls: AtomicUsize::new(0),
             additional_allocated: AtomicBool::new(false),
             config,
         };
@@ -363,9 +367,10 @@ impl<T: Default> Pool<T> {
                     self.additional_allocated.store(true, Relaxed);
                 }
                 if self.config.need_process_reclamation {
-                    self.fastpulls.store(0, SeqCst);
+                    self.surpluspulls.store(0, SeqCst);
                 }
-                if self.allocated.fetch_add(1, Relaxed) + 1 <= self.config.capacity {
+                if self.allocated.load(Acquire) < self.config.capacity {
+                    self.allocated.fetch_add(1, Relaxed);
                     Some(Prc::new(T::default()))
                 } else {
                     None
@@ -374,15 +379,15 @@ impl<T: Default> Pool<T> {
             Some(item) => {
                 if self.config.need_process_reclamation {
                     let left = self.queue.len();
-                    if left >= self.config.idle_threshold_for_fastpull {
-                        let fastpulls = self.fastpulls.fetch_add(1, Relaxed) + 1;
-                        if fastpulls >= self.config.fastpull_threshold_for_reclaim
+                    if left >= self.config.idle_threshold_for_surpluspull {
+                        let surpluspulls = self.surpluspulls.fetch_add(1, Relaxed) + 1;
+                        if surpluspulls >= self.config.surpluspull_threshold_for_reclaim
                             && self.additional_allocated.load(Relaxed)
                         {
                             self.reclaim();
                         }
                     } else {
-                        self.fastpulls.store(0, Relaxed);
+                        self.surpluspulls.store(0, Relaxed);
                     }
                 }
                 item.inc_ref();
@@ -423,11 +428,11 @@ pub struct Config<T: Default> {
     pub prealloc: usize,
     /// Whether to automatically reclaim allocated items and free them to reduce memory usage.
     pub auto_reclaim: bool,
-    /// Threshold of `fast-pull` continuous occurrence to trigger reclamation
+    /// Threshold of `surplus-pull` continuous occurrence to trigger reclamation
     /// when `auto_reclaim` is enabled.
-    pub fastpull_threshold_for_reclaim: usize,
-    /// Threshold for idle items to judge as a fast-pull when `auto_reclaim` is enabled.
-    pub idle_threshold_for_fastpull: usize,
+    pub surpluspull_threshold_for_reclaim: usize,
+    /// Threshold for idle items to judge as a surplus-pull when `auto_reclaim` is enabled.
+    pub idle_threshold_for_surpluspull: usize,
     /// Optional function to clear or reset an item before it is reused.
     pub clear_func: Option<fn(&mut T)>,
     /// Internal flag to indicate if the pool needs to process reclamation.
@@ -441,8 +446,8 @@ impl<T: Default> Default for Config<T> {
             prealloc: 0,
             auto_reclaim: false,
             clear_func: None,
-            fastpull_threshold_for_reclaim: 0,
-            idle_threshold_for_fastpull: 0,
+            surpluspull_threshold_for_reclaim: 0,
+            idle_threshold_for_surpluspull: 0,
             need_process_reclamation: false,
         }
     }
@@ -450,8 +455,12 @@ impl<T: Default> Default for Config<T> {
 
 impl<T: Default> Config<T> {
     pub(crate) fn post_process(&mut self) {
-        if self.idle_threshold_for_fastpull == 0 {
-            self.idle_threshold_for_fastpull = max(1, self.capacity / 20);
+        if self.idle_threshold_for_surpluspull == 0 {
+            self.idle_threshold_for_surpluspull = max(1, self.capacity / 20);
+        }
+
+        if self.surpluspull_threshold_for_reclaim == 0 {
+            self.surpluspull_threshold_for_reclaim = max(2, self.capacity / 100);
         }
 
         if self.auto_reclaim && self.prealloc != self.capacity {

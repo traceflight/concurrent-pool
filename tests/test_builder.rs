@@ -35,8 +35,8 @@ fn build_with_auto_reclaim() {
         .capacity(5)
         .prealloc(2)
         .enable_auto_reclaim()
-        .fastpull_threshold_for_reclaim(3)
-        .idle_threshold_for_fastpull(2)
+        .surpluspull_threshold_for_reclaim(3)
+        .idle_threshold_for_surpluspull(2)
         .build();
     assert_eq!(pool.capacity(), 5);
     assert_eq!(pool.allocated(), 2);
@@ -53,12 +53,12 @@ fn build_with_auto_reclaim() {
     drop(item5);
     assert_eq!(pool.allocated(), 5);
 
-    // first fast-pull
+    // first surplus-pull
     let _item1 = pool.pull().unwrap();
-    // second fast-pull
+    // second surplus-pull
     let _item2 = pool.pull().unwrap();
     assert_eq!(pool.allocated(), 5);
-    // third fast-pull, triger reclaim
+    // third surplus-pull, triger reclaim
     let _item3 = pool.pull().unwrap();
     assert_eq!(pool.allocated(), 4);
 }

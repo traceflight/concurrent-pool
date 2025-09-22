@@ -5,12 +5,12 @@
 //! - Configurable capacity and preallocation.
 //! - Thread-safe: Multiple threads can pull and recycle items concurrently.
 //! - Automatic reclamation of unused item when the continuous occurrence
-//! of `fast-pull` reaches a certain threshold if `auto_reclaim` is enabled.
+//! of `surplus-pull` reaches a certain threshold if `auto_reclaim` is enabled.
 //!
-//! # `fast-pull`
+//! # `surplus-pull`
 //!
 //! After pulling data from the memory pool, available allocated entities in the memory
-//! pool are exceed a certain threshold. We call this pull is a `fast-pull`.
+//! pool are exceed a certain threshold. We call this pull is a `surplus-pull`.
 //!
 //! # Examples
 //!

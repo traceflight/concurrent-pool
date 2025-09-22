@@ -1,6 +1,6 @@
 [package]
 name = "concurrent-pool"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Julian Wang <traceflight@outlook.com>"]
 description = "A concurrent object pool."
@@ -13,3 +13,8 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 crossbeam-queue = "0.3.12"
+serde = { version = "1.0.226", optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
