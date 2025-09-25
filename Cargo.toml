@@ -18,3 +18,12 @@ serde = { version = "1.0.226", optional = true }
 [features]
 default = ["serde"]
 serde = ["dep:serde"]
+
+[dev-dependencies]
+criterion = "0.7.0"
+sharded-slab = "0.1.7"
+slab = "0.4.11"
+
+[[bench]]
+name = "bench"
+harness = false
