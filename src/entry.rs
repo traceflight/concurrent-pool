@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::*;
@@ -11,6 +13,7 @@ use crate::Pool;
 /// to the [`Pool`].
 /// When the last `Entry` is dropped, the item is returned to the pool.
 ///
+#[derive(Debug)]
 pub struct Entry<'a, T: Default> {
     // When the last reference is dropped, the item is returned to the pool.
     // `item` is always `Some` before the last reference is dropped.
@@ -25,6 +28,32 @@ impl<'a, T: Default> Clone for Entry<'a, T> {
             item: self.item.clone(),
             pool: self.pool,
         }
+    }
+}
+
+impl<'a, T: Default + PartialEq> PartialEq for Entry<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.item.eq(&other.item)
+    }
+}
+
+impl<'a, T: Default + Eq> Eq for Entry<'a, T> {}
+
+impl<'a, T: Default + PartialOrd> PartialOrd for Entry<'a, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.item.partial_cmp(&other.item)
+    }
+}
+
+impl<'a, T: Default + Ord> Ord for Entry<'a, T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.item.cmp(&other.item)
+    }
+}
+
+impl<'a, T: Default + Hash> Hash for Entry<'a, T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.item.hash(state)
     }
 }
 
@@ -94,6 +123,45 @@ impl<T: Default> Clone for OwnedEntry<T> {
             item: self.item.clone(),
             pool: self.pool.clone(),
         }
+    }
+}
+
+impl<T: Default + PartialEq> PartialEq for OwnedEntry<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.item.eq(&other.item)
+    }
+}
+
+impl<T: Default + Eq> Eq for OwnedEntry<T> {}
+
+impl<T: Default + PartialOrd> PartialOrd for OwnedEntry<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.item.partial_cmp(&other.item)
+    }
+}
+
+impl<T: Default + Ord> Ord for OwnedEntry<T> {
+    /// Comparison for two `OwnedEntry`
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use concurrent_pool::Pool;
+    /// use std::sync::Arc;
+    ///
+    /// let pool = Arc::new(Pool::<usize>::with_capacity(2));
+    /// let item1 = pool.pull_owned_with(|i| *i = 1).unwrap();
+    /// let item2 = pool.pull_owned_with(|i| *i = 2).unwrap();
+    /// assert!(item1 < item2);
+    /// ```
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.item.cmp(&other.item)
+    }
+}
+
+impl<T: Default + Hash> Hash for OwnedEntry<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.item.hash(state)
     }
 }
 
@@ -172,6 +240,43 @@ impl<T: ?Sized> Deref for Prc<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.inner().data
+    }
+}
+
+impl<T: ?Sized + PartialEq> PartialEq for Prc<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner().data.eq(other)
+    }
+}
+impl<T: ?Sized + Eq> Eq for Prc<T> {}
+
+impl<T: ?Sized + PartialOrd> PartialOrd for Prc<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.inner().data.partial_cmp(other)
+    }
+}
+
+impl<T: ?Sized + Ord> Ord for Prc<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.inner().data.cmp(other)
+    }
+}
+
+impl<T: ?Sized + Hash> Hash for Prc<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.inner().data.hash(state)
+    }
+}
+
+impl<T: ?Sized + Debug> Debug for Prc<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner().data.fmt(f)
+    }
+}
+
+impl<T: ?Sized + Display> Display for Prc<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner().data.fmt(f)
     }
 }
 

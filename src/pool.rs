@@ -50,6 +50,7 @@ use crate::{Entry, OwnedEntry};
 /// sender2.join().unwrap();
 /// receiver.join().unwrap();
 /// ```
+#[derive(Debug)]
 pub struct Pool<T: Default> {
     /// Configuration of the pool.
     config: Config<T>,
@@ -421,6 +422,7 @@ impl<T: Default> Pool<T> {
 }
 
 /// Configuration for the pool.
+#[derive(Debug)]
 pub struct Config<T: Default> {
     /// Maximum capacity of the pool.
     pub capacity: usize,

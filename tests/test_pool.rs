@@ -2,6 +2,7 @@ use std::sync::{Arc, mpsc};
 
 use concurrent_pool::Pool;
 
+#[derive(Debug)]
 struct BigStruct {
     _slice: [u8; 2048],
     _heap: Vec<u8>,
