@@ -9,6 +9,7 @@ A concurrent object pool based on [Crossbeam Queue](https://crates.io/crates/cro
 
 - Configurable capacity and preallocation.
 - Thread-safe: Multiple threads can pull and recycle items concurrently.
+- Automatic return of dropped items to the pool for reuse.
 - Automatic reclamation of unused item when the continuous occurrence
 of `surplus-pull` reaches a certain threshold if `auto_reclaim` is enabled.
 
@@ -74,6 +75,25 @@ sender1.join().unwrap();
 sender2.join().unwrap();
 receiver.join().unwrap();
 ```
+## Performance
+
+These [benchmarks](./benches/bench.rs) are based on [`sharded-slab`](https://crates.io/crates/sharded-slab) repository.
+
+The first shows the results of a benchmark where an increasing number of
+items are inserted and then removed into a slab concurrently by five
+threads. It compares the performance of the `concurrent pool` implementation
+with a `sharded-slab` and a `RwLock<slab::Slab>`:
+
+![multi-threaded](./benches/images/insert_remove_multi_threaded.svg)
+
+The second graph shows the results of a benchmark where an increasing
+number of items are inserted and then removed by a _single_ thread. It
+compares the performance of the `concurrent pool` with a `sharded-slab`,
+an `RwLock<slab::Slab>` and a `mut slab::Slab`.
+
+![single-threaded](./benches/images/insert_remove_single_threaded.svg)
+
+The benchmarks show that concurrent pool performs worse than slab in single-threaded scenarios, but significantly outperforms sharded slab. In multi-threaded scenarios, it is clearly better than slab, and only slightly worse than sharded slab.
 
 ## License
 

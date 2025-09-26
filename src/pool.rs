@@ -176,6 +176,12 @@ impl<T: Default> Pool<T> {
         pool
     }
 
+    /// Enable automatic reclamation of allocated items to reduce memory usage.
+    pub fn enable_auto_reclaim(&mut self) {
+        self.config.auto_reclaim = true;
+        self.config.post_process();
+    }
+
     /// Get in used items count.
     ///
     /// # Example

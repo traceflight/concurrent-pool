@@ -40,13 +40,10 @@ impl<T: Send + Sync + 'static> MultithreadedBench<T> {
     }
 }
 
-const N_INSERTIONS: &[usize] = &[100, 300, 500, 700, 1000, 3000, 5000];
+const N_INSERTIONS: &[usize] = &[100, 300, 500, 700, 1000, 3000];
 
-fn insert_remove_local(c: &mut Criterion) {
-    // the 10000-insertion benchmark takes the `slab` crate about an hour to
-    // run; don't run this unless you're prepared for that...
-    // const N_INSERTIONS: &'static [usize] = &[100, 500, 1000, 5000, 10000];
-    let mut group = c.benchmark_group("insert_remove_local");
+fn insert_remove_multi_threaded(c: &mut Criterion) {
+    let mut group = c.benchmark_group("insert_remove_multi_threaded");
     let g = group.measurement_time(Duration::from_secs(15));
 
     for i in N_INSERTIONS {
@@ -54,40 +51,41 @@ fn insert_remove_local(c: &mut Criterion) {
             b.iter_custom(|iters| {
                 let mut total = Duration::from_secs(0);
                 for _ in 0..iters {
-                    let bench =
-                        MultithreadedBench::new(Arc::new(concurrent_pool::Pool::with_capacity(i)));
+                    let bench = MultithreadedBench::new(Arc::new(
+                        concurrent_pool::Pool::with_capacity(i * 4),
+                    ));
                     let elapsed = bench
-                        .thread(move |start, slab| {
+                        .thread(move |start, pool| {
                             start.wait();
                             let v: Vec<_> = (0..i)
-                                .map(|i| slab.pull_with(|item| *item = i).unwrap())
+                                .map(|i| pool.pull_with(|item| *item = i).unwrap())
                                 .collect();
                             for i in v {
                                 drop(i);
                             }
                         })
-                        .thread(move |start, slab| {
+                        .thread(move |start, pool| {
                             start.wait();
                             let v: Vec<_> = (0..i)
-                                .map(|i| slab.pull_with(|item| *item = i).unwrap())
+                                .map(|i| pool.pull_with(|item| *item = i).unwrap())
                                 .collect();
                             for i in v {
                                 drop(i);
                             }
                         })
-                        .thread(move |start, slab| {
+                        .thread(move |start, pool| {
                             start.wait();
                             let v: Vec<_> = (0..i)
-                                .map(|i| slab.pull_with(|item| *item = i).unwrap())
+                                .map(|i| pool.pull_with(|item| *item = i).unwrap())
                                 .collect();
                             for i in v {
                                 drop(i);
                             }
                         })
-                        .thread(move |start, slab| {
+                        .thread(move |start, pool| {
                             start.wait();
                             let v: Vec<_> = (0..i)
-                                .map(|i| slab.pull_with(|item| *item = i).unwrap())
+                                .map(|i| pool.pull_with(|item| *item = i).unwrap())
                                 .collect();
                             for i in v {
                                 drop(i);
@@ -256,5 +254,9 @@ fn insert_remove_single_thread(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, insert_remove_local, insert_remove_single_thread);
+criterion_group!(
+    benches,
+    insert_remove_multi_threaded,
+    insert_remove_single_thread
+);
 criterion_main!(benches);
