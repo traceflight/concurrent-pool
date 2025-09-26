@@ -84,14 +84,14 @@ items are inserted and then removed into a slab concurrently by five
 threads. It compares the performance of the `concurrent pool` implementation
 with a `sharded-slab` and a `RwLock<slab::Slab>`:
 
-![multi-threaded](./benches/images/insert_remove_multi_threaded.svg)
+![insert_remove_multi_threaded](https://github.com/user-attachments/assets/71904b30-eb62-451d-8ee5-552f9b329bca)
 
 The second graph shows the results of a benchmark where an increasing
 number of items are inserted and then removed by a _single_ thread. It
 compares the performance of the `concurrent pool` with a `sharded-slab`,
 an `RwLock<slab::Slab>` and a `mut slab::Slab`.
 
-![single-threaded](./benches/images/insert_remove_single_threaded.svg)
+![insert_remove_single_threaded](https://github.com/user-attachments/assets/c8da4099-41b1-4487-b7f7-8e9641bc092d)
 
 The benchmarks show that concurrent pool performs worse than slab in single-threaded scenarios, but significantly outperforms sharded slab. In multi-threaded scenarios, it is clearly better than slab, and only slightly worse than sharded slab.
 
