@@ -370,11 +370,15 @@ impl<T: Default> Pool<T> {
                 if self.config.need_process_reclamation {
                     self.surpluspulls.store(0, SeqCst);
                 }
-                if self.allocated.load(Acquire) < self.config.capacity {
-                    self.allocated.fetch_add(1, Relaxed);
-                    Some(Prc::new(T::default()))
-                } else {
-                    None
+
+                match self.allocated.fetch_update(AcqRel, Acquire, |current| {
+                    match current < self.config.capacity {
+                        true => Some(current + 1),
+                        false => None,
+                    }
+                }) {
+                    Ok(_) => Some(Prc::new(T::default())),
+                    Err(_) => None,
                 }
             }
             Some(item) => {
