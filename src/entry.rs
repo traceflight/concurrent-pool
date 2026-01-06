@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::*;
 use std::{ops::Deref, ptr::NonNull, sync::atomic::AtomicUsize};
@@ -329,7 +328,9 @@ impl<T: ?Sized> Prc<T> {
 
     /// Drops the inner data.
     pub(crate) unsafe fn drop_slow(&self) {
-        unsafe { ptr::drop_in_place(&mut (*self.ptr.as_ptr()).data) };
+        unsafe {
+            drop(Box::from_raw(self.ptr.as_ptr()));
+        }
     }
 
     #[inline]
